@@ -1,6 +1,12 @@
+"use client";
+
+import { useAuth } from "@/contexts/auth-context";
+
 const navItems = ["FEATURES", "PRICING", "CONTACT"];
 
 function TopNav() {
+  const { loading, user } = useAuth();
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.08] bg-[#030303]/70 backdrop-blur-xl">
       <nav className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center px-4">
@@ -18,10 +24,10 @@ function TopNav() {
         </div>
         <div className="flex justify-end">
           <a
-            href="#get-started"
+            href="/auth"
             className="hidden h-9 items-center justify-center rounded-full border border-white/[0.16] bg-white/[0.06] px-4 text-xs font-semibold tracking-wide text-white transition-colors hover:bg-white hover:text-[#030303] sm:inline-flex"
           >
-            Get Started
+            {loading ? "Loading" : user ? "My Account" : "Get Started"}
           </a>
         </div>
       </nav>
