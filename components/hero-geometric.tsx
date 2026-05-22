@@ -96,7 +96,7 @@ function HeroGeometric({
   };
 
   return (
-    <section className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#030303]">
+    <section className="relative flex min-h-[100svh] w-full items-center justify-center overflow-hidden bg-[#030303] px-4 pb-14 pt-24 sm:px-6 sm:py-24">
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.05] via-transparent to-rose-500/[0.05] blur-3xl" />
 
       <div className="absolute inset-0 overflow-hidden">
@@ -106,7 +106,7 @@ function HeroGeometric({
           height={140}
           rotate={12}
           gradient="from-indigo-500/[0.15]"
-          className="left-[-10%] top-[15%] md:left-[-5%] md:top-[20%]"
+          className="left-[-48%] top-[16%] opacity-70 sm:left-[-22%] md:left-[-5%] md:top-[20%] md:opacity-100"
         />
 
         <ElegantShape
@@ -115,7 +115,7 @@ function HeroGeometric({
           height={120}
           rotate={-15}
           gradient="from-rose-500/[0.15]"
-          className="right-[-5%] top-[70%] md:right-[0%] md:top-[75%]"
+          className="right-[-56%] top-[74%] opacity-70 sm:right-[-24%] md:right-[0%] md:top-[75%] md:opacity-100"
         />
 
         <ElegantShape
@@ -124,7 +124,7 @@ function HeroGeometric({
           height={80}
           rotate={-8}
           gradient="from-violet-500/[0.15]"
-          className="bottom-[5%] left-[5%] md:bottom-[10%] md:left-[10%]"
+          className="bottom-[8%] left-[-18%] opacity-65 sm:left-[2%] md:bottom-[10%] md:left-[10%] md:opacity-100"
         />
 
         <ElegantShape
@@ -133,7 +133,7 @@ function HeroGeometric({
           height={60}
           rotate={20}
           gradient="from-amber-500/[0.15]"
-          className="right-[15%] top-[10%] md:right-[20%] md:top-[15%]"
+          className="right-[-12%] top-[10%] opacity-70 sm:right-[10%] md:right-[20%] md:top-[15%] md:opacity-100"
         />
 
         <ElegantShape
@@ -142,18 +142,18 @@ function HeroGeometric({
           height={40}
           rotate={-25}
           gradient="from-cyan-500/[0.15]"
-          className="left-[20%] top-[5%] md:left-[25%] md:top-[10%]"
+          className="left-[8%] top-[6%] opacity-65 sm:left-[18%] md:left-[25%] md:top-[10%] md:opacity-100"
         />
       </div>
 
-      <div className="container relative z-10 mx-auto px-4 md:px-6">
+      <div className="container relative z-10 mx-auto">
         <div className="mx-auto max-w-3xl text-center">
           <motion.div
             custom={0}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 md:mb-12"
+            className="mb-7 inline-flex max-w-full items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 sm:mb-8 md:mb-12"
           >
             <Circle className="h-2 w-2 fill-rose-500/80" />
             <span className="text-sm tracking-wide text-white/60">
@@ -169,7 +169,7 @@ function HeroGeometric({
           >
             <h1
               className={cn(
-                "mb-6 text-4xl font-bold tracking-tight sm:text-6xl md:mb-8 md:text-8xl",
+                "mb-5 text-5xl font-bold leading-[0.94] tracking-tight sm:text-6xl md:mb-8 md:text-8xl",
                 titleClassName,
               )}
             >
@@ -189,7 +189,7 @@ function HeroGeometric({
             initial="hidden"
             animate="visible"
           >
-            <p className="mx-auto mb-8 max-w-xl px-4 text-base font-light leading-relaxed tracking-wide text-white/40 sm:text-lg md:text-xl">
+            <p className="mx-auto mb-7 max-w-xl text-sm font-light leading-6 tracking-wide text-white/44 sm:mb-8 sm:text-lg sm:leading-relaxed md:text-xl">
               Crafting exceptional digital experiences through innovative
               design and cutting-edge technology.
             </p>
@@ -203,7 +203,7 @@ function HeroGeometric({
           >
             <a
               href="#get-started"
-              className="inline-flex h-12 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold tracking-wide text-[#030303] shadow-[0_12px_40px_rgba(255,255,255,0.16)] transition-colors hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/70 focus:ring-offset-2 focus:ring-offset-[#030303]"
+              className="inline-flex h-12 min-w-36 items-center justify-center rounded-full bg-white px-6 text-sm font-semibold tracking-wide text-[#030303] shadow-[0_12px_40px_rgba(255,255,255,0.16)] transition-colors hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/70 focus:ring-offset-2 focus:ring-offset-[#030303]"
             >
               Get Started
             </a>

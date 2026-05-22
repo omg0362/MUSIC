@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MusicList, type MusicTrack } from "@/components/musiclist";
 import { MusicPlayer } from "@/components/musicplayer";
@@ -113,10 +113,14 @@ function StatusMessage({
 
 export function WorkspaceShell() {
   const router = useRouter();
-  const { loading, session, user } = useAuth();
+  const { credits, loading, refreshCredits, session, setCredits, user } =
+    useAuth();
+  const tracksRequestRef = useRef<AbortController | null>(null);
+  const tracksRef = useRef<MusicTrack[]>([]);
   const [generating, setGenerating] = useState(false);
   const [loadingTracks, setLoadingTracks] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [isPlayerPlaying, setIsPlayerPlaying] = useState(false);
   const [pauseRequest, setPauseRequest] = useState(0);
   const [playRequest, setPlayRequest] = useState(0);
@@ -140,59 +144,148 @@ export function WorkspaceShell() {
   }, [searchQuery, tracks]);
 
   useEffect(() => {
+    tracksRef.current = tracks;
+  }, [tracks]);
+
+  useEffect(() => {
     if (!loading && !user) {
       router.replace("/auth");
     }
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (!session?.access_token) {
+    const url = new URL(window.location.href);
+
+    if (!url.searchParams.has("checkout_id")) {
       return;
     }
 
-    let ignore = false;
+    url.searchParams.delete("checkout_id");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, []);
 
-    async function loadTracks() {
+  const loadTracks = useCallback(async (accessToken: string) => {
+    tracksRequestRef.current?.abort();
+
+    const controller = new AbortController();
+    tracksRequestRef.current = controller;
+
+    await Promise.resolve();
+    if (controller.signal.aborted) return;
+
+    if (tracksRef.current.length === 0) {
       setLoadingTracks(true);
-      setErrorMessage(null);
+    }
+    setErrorMessage(null);
 
-      try {
-        const response = await fetch("/api/music", {
-          headers: {
-            Authorization: `Bearer ${session?.access_token}`,
-          },
-        });
-        const data = (await response.json()) as {
-          music?: MusicTrack[];
-          error?: string;
-        };
+    let timedOut = false;
+    const requestTimeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 15000);
 
-        if (!response.ok) {
-          throw new Error(data.error ?? "Failed to load music list.");
-        }
+    try {
+      const response = await fetch("/api/music", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        signal: controller.signal,
+      });
+      const data = (await response.json()) as {
+        music?: MusicTrack[];
+        error?: string;
+      };
 
-        if (!ignore) {
-          setTracks(data.music ?? []);
-        }
-      } catch (error) {
-        if (!ignore) {
-          setErrorMessage(
-            error instanceof Error ? error.message : "Failed to load music list.",
-          );
-        }
-      } finally {
-        if (!ignore) {
-          setLoadingTracks(false);
-        }
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to load music list.");
+      }
+
+      if (!controller.signal.aborted) {
+        tracksRef.current = data.music ?? [];
+        setTracks(data.music ?? []);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted || timedOut) {
+        setErrorMessage(
+          timedOut
+            ? "Music list refresh timed out. Please try again."
+            : error instanceof Error
+              ? error.message
+              : "Failed to load music list.",
+        );
+      }
+    } finally {
+      window.clearTimeout(requestTimeout);
+
+      if (tracksRequestRef.current === controller) {
+        tracksRequestRef.current = null;
+      }
+
+      if (!controller.signal.aborted || timedOut) {
+        setLoadingTracks(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session?.access_token) {
+      tracksRequestRef.current?.abort();
+      tracksRequestRef.current = null;
+      return;
+    }
+
+    const loadTimer = window.setTimeout(() => {
+      void loadTracks(session.access_token);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(loadTimer);
+      tracksRequestRef.current?.abort();
+      tracksRequestRef.current = null;
+      setLoadingTracks(false);
+    };
+  }, [loadTracks, session?.access_token]);
+
+  useEffect(() => {
+    function handlePageHide() {
+      tracksRequestRef.current?.abort();
+      tracksRequestRef.current = null;
+      setLoadingTracks(false);
+      setGenerating(false);
+    }
+
+    function handlePageShow() {
+      setLoadingTracks(false);
+      void refreshCredits();
+
+      if (session?.access_token) {
+        void loadTracks(session.access_token);
       }
     }
 
-    loadTracks();
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      setLoadingTracks(false);
+      void refreshCredits();
+
+      if (session?.access_token) {
+        void loadTracks(session.access_token);
+      }
+    }
+
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      ignore = true;
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [session?.access_token]);
+  }, [loadTracks, refreshCredits, session?.access_token]);
 
   async function handleRenameTrack(track: MusicTrack) {
     if (!session?.access_token) {
@@ -342,11 +435,20 @@ export function WorkspaceShell() {
         }),
       });
       const data = (await response.json()) as {
+        credits?: number;
         music?: MusicTrack[];
         error?: string;
       };
 
+      if (typeof data.credits === "number") {
+        setCredits(data.credits);
+      }
+
       if (!response.ok) {
+        if (response.status === 402) {
+          setCreditModalOpen(true);
+        }
+
         throw new Error(data.error ?? "Failed to generate music.");
       }
 
@@ -366,6 +468,8 @@ export function WorkspaceShell() {
       className="min-h-screen bg-[#171717] pb-72 text-white"
     >
       <WorkspaceNavbar
+        creditModalOpen={creditModalOpen}
+        onCreditModalOpenChange={setCreditModalOpen}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
@@ -378,8 +482,8 @@ export function WorkspaceShell() {
             Turn a prompt into a track.
           </h1>
           <p className="mt-5 max-w-xl text-sm leading-6 text-white/48 sm:text-base">
-            Describe a genre, mood, instruments, tempo, or scene. The first
-            version generates a 30 second instrumental mp3.
+            Describe a genre, mood, instruments, tempo, or scene. Choose length
+            and return count before generating.
           </p>
         </div>
 
@@ -405,7 +509,12 @@ export function WorkspaceShell() {
       </section>
       <div className="fixed inset-x-0 bottom-[96px] z-30 flex justify-center bg-gradient-to-t from-[#171717] via-[#171717]/92 to-transparent px-4 pb-4 pt-14 sm:bottom-[84px] sm:px-6">
         <div className="w-full max-w-2xl">
-          <PromptInputBox disabled={generating} onSend={handleSendMessage} />
+          <PromptInputBox
+            availableCredits={credits}
+            disabled={generating}
+            onInsufficientCredits={() => setCreditModalOpen(true)}
+            onSend={handleSendMessage}
+          />
         </div>
       </div>
       <MusicPlayer

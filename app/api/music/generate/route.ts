@@ -35,6 +35,43 @@ type StoredMusicRow = {
   completed_at: string | null;
 };
 
+class InsufficientCreditsError extends Error {
+  constructor(
+    readonly credits: number,
+    readonly requiredCredits: number,
+  ) {
+    super("Not enough credits.");
+  }
+}
+
+type ServiceSupabaseClient = ReturnType<typeof createServiceSupabaseClient>;
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+function isMissingRpcFunctionError(error: unknown, functionName: string) {
+  const message = getErrorMessage(error, "");
+
+  return (
+    message.includes(`public.${functionName}`) &&
+    message.includes("schema cache")
+  );
+}
+
 function getEnv(name: string) {
   const value = process.env[name];
 
@@ -43,6 +80,25 @@ function getEnv(name: string) {
   }
 
   return value;
+}
+
+function getOptionalEnv(names: string[]) {
+  for (const name of names) {
+    const value = process.env[name];
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function getSupabaseServiceRoleKey() {
+  return getOptionalEnv([
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_SERVIE_ROLE_KEY",
+  ]);
 }
 
 function isFileOutput(value: unknown): value is FileOutput {
@@ -81,6 +137,14 @@ function isReplicateApiError(error: unknown): error is ApiError {
 }
 
 async function getErrorResponse(error: unknown) {
+  if (error instanceof InsufficientCreditsError) {
+    return {
+      credits: error.credits,
+      message: `Not enough credits. This generation needs ${error.requiredCredits} credits.`,
+      status: 402,
+    };
+  }
+
   if (isReplicateApiError(error)) {
     if (error.response.status === 402) {
       return {
@@ -97,8 +161,7 @@ async function getErrorResponse(error: unknown) {
   }
 
   return {
-    message:
-      error instanceof Error ? error.message : "Failed to generate music.",
+    message: getErrorMessage(error, "Failed to generate music."),
     status: 500,
   };
 }
@@ -115,6 +178,20 @@ function createUserSupabaseClient(accessToken: string) {
       },
     },
   );
+}
+
+function createServiceSupabaseClient() {
+  const serviceRoleKey = getSupabaseServiceRoleKey();
+
+  if (!serviceRoleKey) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  return createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), serviceRoleKey, {
+    auth: {
+      persistSession: false,
+    },
+  });
 }
 
 async function getAuthenticatedUser(request: Request) {
@@ -137,6 +214,155 @@ async function getAuthenticatedUser(request: Request) {
 
 function getTitle(prompt: string) {
   return prompt.length > 64 ? `${prompt.slice(0, 61)}...` : prompt;
+}
+
+function getCreditCost(duration: number, batchSize: number) {
+  return 1 + Math.max(0, duration / 60 - 1) + Math.max(0, batchSize - 1);
+}
+
+async function consumeCredits({
+  credits,
+  supabase,
+  userId,
+}: {
+  credits: number;
+  supabase: ServiceSupabaseClient;
+  userId: string;
+}) {
+  const { data, error } = await supabase.rpc("consume_user_credits", {
+    p_credits: credits,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    if (isMissingRpcFunctionError(error, "consume_user_credits")) {
+      return consumeCreditsWithConditionalUpdate({
+        credits,
+        supabase,
+        userId,
+      });
+    }
+
+    throw new Error(getErrorMessage(error, "Failed to consume credits."));
+  }
+
+  if (typeof data !== "number") {
+    const { data: currentUser } = await supabase
+      .from("users")
+      .select("credits")
+      .eq("id", userId)
+      .single<{ credits: number }>();
+
+    throw new InsufficientCreditsError(currentUser?.credits ?? 0, credits);
+  }
+
+  return data;
+}
+
+async function consumeCreditsWithConditionalUpdate({
+  credits,
+  supabase,
+  userId,
+}: {
+  credits: number;
+  supabase: ServiceSupabaseClient;
+  userId: string;
+}) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: currentUser, error: selectError } = await supabase
+      .from("users")
+      .select("credits")
+      .eq("id", userId)
+      .single<{ credits: number }>();
+
+    if (selectError) {
+      throw new Error(
+        getErrorMessage(selectError, "Failed to load user credits."),
+      );
+    }
+
+    if (currentUser.credits < credits) {
+      throw new InsufficientCreditsError(currentUser.credits, credits);
+    }
+
+    const nextCredits = currentUser.credits - credits;
+    const { data: updatedUser, error: updateError } = await supabase
+      .from("users")
+      .update({ credits: nextCredits })
+      .eq("id", userId)
+      .eq("credits", currentUser.credits)
+      .select("credits")
+      .maybeSingle<{ credits: number }>();
+
+    if (updateError) {
+      throw new Error(
+        getErrorMessage(updateError, "Failed to consume credits."),
+      );
+    }
+
+    if (updatedUser) {
+      return updatedUser.credits;
+    }
+  }
+
+  throw new Error("Credit balance changed while starting generation.");
+}
+
+async function refundCredits({
+  credits,
+  supabase,
+  userId,
+}: {
+  credits: number;
+  supabase: ServiceSupabaseClient;
+  userId: string;
+}) {
+  const { error } = await supabase.rpc("refund_user_credits", {
+    p_credits: credits,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    if (isMissingRpcFunctionError(error, "refund_user_credits")) {
+      await refundCreditsWithReadUpdate({
+        credits,
+        supabase,
+        userId,
+      });
+      return;
+    }
+
+    throw new Error(getErrorMessage(error, "Failed to refund credits."));
+  }
+}
+
+async function refundCreditsWithReadUpdate({
+  credits,
+  supabase,
+  userId,
+}: {
+  credits: number;
+  supabase: ServiceSupabaseClient;
+  userId: string;
+}) {
+  const { data: currentUser, error: selectError } = await supabase
+    .from("users")
+    .select("credits")
+    .eq("id", userId)
+    .single<{ credits: number }>();
+
+  if (selectError) {
+    throw new Error(getErrorMessage(selectError, "Failed to load credits."));
+  }
+
+  const { error: updateError } = await supabase
+    .from("users")
+    .update({ credits: currentUser.credits + credits })
+    .eq("id", userId);
+
+  if (updateError) {
+    throw new Error(getErrorMessage(updateError, "Failed to refund credits."));
+  }
 }
 
 function getFileExtension(contentType: string | null) {
@@ -228,7 +454,7 @@ async function storeGeneratedAudio({
     });
 
   if (uploadError) {
-    throw uploadError;
+    throw new Error(getErrorMessage(uploadError, "Failed to upload music."));
   }
 
   const { data, error: insertError } = await supabase
@@ -260,7 +486,7 @@ async function storeGeneratedAudio({
 
   if (insertError) {
     await supabase.storage.from(MUSIC_BUCKET).remove([storagePath]);
-    throw insertError;
+    throw new Error(getErrorMessage(insertError, "Failed to save music."));
   }
 
   return {
@@ -270,6 +496,10 @@ async function storeGeneratedAudio({
 }
 
 export async function POST(request: Request) {
+  let chargedCredits = 0;
+  let serviceSupabase: ServiceSupabaseClient | null = null;
+  let userId: string | null = null;
+
   try {
     const authentication = await getAuthenticatedUser(request);
 
@@ -285,7 +515,7 @@ export async function POST(request: Request) {
           ? body.prompt.trim()
           : "";
     const lyrics = typeof body.lyrics === "string" ? body.lyrics.trim() : "";
-    const duration = Number(body.duration ?? 90);
+    const duration = Number(body.duration ?? 60);
     const batchSize = Number(body.batch_size ?? 1);
 
     if (!caption) {
@@ -294,8 +524,7 @@ export async function POST(request: Request) {
 
     if (
       !Number.isInteger(duration) ||
-      duration < 1 ||
-      duration > 600 ||
+      ![60, 120, 180].includes(duration) ||
       !Number.isInteger(batchSize) ||
       batchSize < 1 ||
       batchSize > 4
@@ -305,6 +534,17 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+
+    const requiredCredits = getCreditCost(duration, batchSize);
+
+    userId = authentication.user.id;
+    serviceSupabase = createServiceSupabaseClient();
+    const remainingCredits = await consumeCredits({
+      credits: requiredCredits,
+      supabase: serviceSupabase,
+      userId,
+    });
+    chargedCredits = requiredCredits;
 
     const replicate = new Replicate({
       auth: getEnv("REPLICATE_API_TOKEN"),
@@ -347,10 +587,22 @@ export async function POST(request: Request) {
       ),
     );
 
-    return Response.json({ music });
+    return Response.json({ credits: remainingCredits, music });
   } catch (error) {
-    const { message, status } = await getErrorResponse(error);
+    if (chargedCredits > 0 && serviceSupabase && userId) {
+      try {
+        await refundCredits({
+          credits: chargedCredits,
+          supabase: serviceSupabase,
+          userId,
+        });
+      } catch {
+        // The original generation error is more useful to the caller.
+      }
+    }
 
-    return Response.json({ error: message }, { status });
+    const { credits, message, status } = await getErrorResponse(error);
+
+    return Response.json({ credits, error: message }, { status });
   }
 }

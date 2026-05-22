@@ -2,12 +2,13 @@
 
 import {
   useEffect,
+  useMemo,
   useState,
   type FormEvent,
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { FileText, Layers, Send, Timer, X } from "lucide-react";
+import { Coins, FileText, Layers, Send, Timer, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type PromptOptions = {
@@ -18,17 +19,35 @@ export type PromptOptions = {
 
 type PromptInputBoxProps = {
   onSend: (message: string, options: PromptOptions) => void;
+  availableCredits?: number | null;
   className?: string;
   disabled?: boolean;
+  onInsufficientCredits?: () => void;
 };
 
 const durationOptions = [
-  { label: "1 min", value: 60 },
-  { label: "2 min", value: 120 },
-  { label: "3 min", value: 180 },
+  { extraCredits: 0, label: "1 min", value: 60 },
+  { extraCredits: 1, label: "2 min", value: 120 },
+  { extraCredits: 2, label: "3 min", value: 180 },
 ];
 
 const batchSizeOptions = [1, 2, 3, 4];
+
+function getDurationExtraCredits(duration: number) {
+  return Math.max(0, duration / 60 - 1);
+}
+
+function getBatchExtraCredits(batchSize: number) {
+  return Math.max(0, batchSize - 1);
+}
+
+function getCreditCost(duration: number, batchSize: number) {
+  return 1 + getDurationExtraCredits(duration) + getBatchExtraCredits(batchSize);
+}
+
+function formatExtraCredits(extraCredits: number) {
+  return extraCredits > 0 ? `+${extraCredits}` : "Base";
+}
 
 function LyricsModal({
   lyrics,
@@ -126,24 +145,39 @@ function LyricsModal({
 }
 
 export function PromptInputBox({
+  availableCredits = null,
   className,
   disabled = false,
+  onInsufficientCredits,
   onSend,
 }: PromptInputBoxProps) {
   const [batchSize, setBatchSize] = useState(1);
-  const [duration, setDuration] = useState(90);
+  const [duration, setDuration] = useState(60);
   const [lyrics, setLyrics] = useState("");
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [openPopover, setOpenPopover] = useState<"duration" | "batch" | null>(
     null,
   );
+  const creditCost = useMemo(
+    () => getCreditCost(duration, batchSize),
+    [batchSize, duration],
+  );
+  const durationExtraCredits = getDurationExtraCredits(duration);
+  const batchExtraCredits = getBatchExtraCredits(batchSize);
+  const hasInsufficientCredits =
+    typeof availableCredits === "number" && availableCredits < creditCost;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedMessage = message.trim();
     if (!trimmedMessage) return;
+
+    if (hasInsufficientCredits) {
+      onInsufficientCredits?.();
+      return;
+    }
 
     onSend(trimmedMessage, {
       batchSize,
@@ -185,10 +219,15 @@ export function PromptInputBox({
               className="inline-flex h-8 items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 text-xs text-white/68 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Timer className="h-3.5 w-3.5" aria-hidden="true" />
-              {duration === 90 ? "90 sec" : `${duration / 60} min`}
+              {duration / 60} min
+              {durationExtraCredits > 0 ? (
+                <span className="rounded-full bg-white/12 px-1.5 py-0.5 text-[10px] text-white/70">
+                  +{durationExtraCredits}
+                </span>
+              ) : null}
             </button>
             {openPopover === "duration" ? (
-              <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-28 rounded-[8px] border border-white/12 bg-[#222]/95 p-1 shadow-[0_18px_42px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+              <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-36 rounded-[8px] border border-white/12 bg-[#222]/95 p-1 shadow-[0_18px_42px_rgba(0,0,0,0.35)] backdrop-blur-xl">
                 {durationOptions.map((option) => (
                   <button
                     key={option.value}
@@ -197,9 +236,12 @@ export function PromptInputBox({
                       setDuration(option.value);
                       setOpenPopover(null);
                     }}
-                    className="block w-full rounded-[6px] px-3 py-2 text-left text-xs text-white/78 transition hover:bg-white/10 hover:text-white"
+                    className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-xs text-white/78 transition hover:bg-white/10 hover:text-white"
                   >
-                    {option.label}
+                    <span>{option.label}</span>
+                    <span className="text-[10px] text-white/46">
+                      {formatExtraCredits(option.extraCredits)}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -219,9 +261,14 @@ export function PromptInputBox({
             >
               <Layers className="h-3.5 w-3.5" aria-hidden="true" />
               {batchSize} track{batchSize > 1 ? "s" : ""}
+              {batchExtraCredits > 0 ? (
+                <span className="rounded-full bg-white/12 px-1.5 py-0.5 text-[10px] text-white/70">
+                  +{batchExtraCredits}
+                </span>
+              ) : null}
             </button>
             {openPopover === "batch" ? (
-              <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-28 rounded-[8px] border border-white/12 bg-[#222]/95 p-1 shadow-[0_18px_42px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+              <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-36 rounded-[8px] border border-white/12 bg-[#222]/95 p-1 shadow-[0_18px_42px_rgba(0,0,0,0.35)] backdrop-blur-xl">
                 {batchSizeOptions.map((option) => (
                   <button
                     key={option}
@@ -230,14 +277,39 @@ export function PromptInputBox({
                       setBatchSize(option);
                       setOpenPopover(null);
                     }}
-                    className="block w-full rounded-[6px] px-3 py-2 text-left text-xs text-white/78 transition hover:bg-white/10 hover:text-white"
+                    className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-xs text-white/78 transition hover:bg-white/10 hover:text-white"
                   >
-                    {option}
+                    <span>
+                      {option} track{option > 1 ? "s" : ""}
+                    </span>
+                    <span className="text-[10px] text-white/46">
+                      {formatExtraCredits(getBatchExtraCredits(option))}
+                    </span>
                   </button>
                 ))}
               </div>
             ) : null}
           </div>
+
+          <button
+            type="button"
+            disabled={disabled || !hasInsufficientCredits}
+            onClick={() => onInsufficientCredits?.()}
+            className={cn(
+              "ml-auto inline-flex h-8 items-center gap-2 rounded-full border px-3 text-xs transition",
+              hasInsufficientCredits
+                ? "border-red-300/24 bg-red-400/10 text-red-100 hover:bg-red-400/16"
+                : "cursor-default border-white/12 bg-white/[0.06] text-white/68",
+            )}
+          >
+            <Coins className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{creditCost} credit cost</span>
+            {typeof availableCredits === "number" ? (
+              <span className="text-white/42">
+                {availableCredits.toLocaleString()} left
+              </span>
+            ) : null}
+          </button>
         </div>
 
         <div className="flex items-end gap-2">
@@ -264,9 +336,22 @@ export function PromptInputBox({
 
           <button
             type="submit"
-            disabled={disabled || !message.trim()}
+            disabled={disabled || (!message.trim() && !hasInsufficientCredits)}
+            onClick={(event) => {
+              if (!hasInsufficientCredits) {
+                return;
+              }
+
+              event.preventDefault();
+              onInsufficientCredits?.();
+            }}
             aria-label="Generate music"
-            className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#171717] shadow-[0_10px_28px_rgba(255,255,255,0.18)] transition hover:scale-[1.03] hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:scale-100"
+            className={cn(
+              "mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-[0_10px_28px_rgba(255,255,255,0.18)] transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-white/30 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:scale-100",
+              hasInsufficientCredits
+                ? "bg-red-100 text-[#171717] hover:bg-red-50"
+                : "bg-white text-[#171717] hover:bg-white/90",
+            )}
           >
             <Send className="h-4 w-4" aria-hidden="true" />
           </button>

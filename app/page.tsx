@@ -1,4 +1,9 @@
+import { CtaSection } from "@/components/cta-section";
+import { ExampleSection } from "@/components/example-section";
+import { FeaturesSection } from "@/components/features-section";
+import { FooterSection } from "@/components/footer-section";
 import { HeroGeometric } from "@/components/hero-geometric";
+import { PricingSection } from "@/components/pricing-section";
 import { TopNav } from "@/components/top-nav";
 import { Cinzel } from "next/font/google";
 
@@ -17,6 +22,11 @@ export default function Page() {
         title2="Own Sound"
         titleClassName={cinzel.className}
       />
+      <ExampleSection />
+      <FeaturesSection />
+      <PricingSection />
+      <CtaSection />
+      <FooterSection />
     </main>
   );
 }

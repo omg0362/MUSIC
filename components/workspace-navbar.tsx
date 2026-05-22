@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
+import { Coins, Search, Star, X } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 function getInitials(name?: string | null) {
@@ -17,16 +18,171 @@ function getInitials(name?: string | null) {
 }
 
 type WorkspaceNavbarProps = {
+  creditModalOpen?: boolean;
+  onCreditModalOpenChange?: (open: boolean) => void;
   onSearchChange?: (query: string) => void;
   searchQuery?: string;
 };
 
+type CreditPack = "pro" | "ultra";
+
+type CreditPlan = {
+  credits: number;
+  id: CreditPack;
+  name: string;
+  price: string;
+};
+
+const CREDIT_PLANS: CreditPlan[] = [
+  { credits: 100, id: "pro", name: "Pro", price: "$5" },
+  { credits: 1100, id: "ultra", name: "Ultra", price: "$50" },
+];
+
+function CreditModal({
+  accessToken,
+  onClose,
+}: {
+  accessToken?: string;
+  onClose: () => void;
+}) {
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkoutPack, setCheckoutPack] = useState<CreditPack | null>(null);
+
+  async function handleCheckout(pack: CreditPack) {
+    if (!accessToken) {
+      setCheckoutError("Sign in is required before checkout.");
+      return;
+    }
+
+    setCheckoutError(null);
+    setCheckoutPack(pack);
+
+    try {
+      const response = await fetch("/api/checkout/credits", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pack }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { error?: unknown; url?: unknown }
+        | null;
+
+      if (!response.ok || !data || typeof data.url !== "string") {
+        const message =
+          typeof data?.error === "string"
+            ? data.error
+            : "Failed to start checkout.";
+
+        throw new Error(message);
+      }
+
+      flushSync(() => {
+        setCheckoutPack(null);
+        onClose();
+      });
+      window.location.assign(data.url);
+    } catch (error) {
+      setCheckoutError(
+        error instanceof Error ? error.message : "Failed to start checkout.",
+      );
+      setCheckoutPack(null);
+    }
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Upgrade credits"
+      onMouseDown={onClose}
+    >
+      <div
+        className="relative w-full max-w-2xl rounded-[8px] border border-white/14 bg-[#171717] p-5 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div>
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-base font-semibold">Upgrade</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close upgrade modal"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {CREDIT_PLANS.map((plan) => (
+              <article
+                key={plan.name}
+                className="relative min-h-[190px] w-full overflow-hidden rounded-[8px] border border-white/12 bg-white p-5 text-[#171717]"
+              >
+                <div
+                  className="absolute inset-0 z-0"
+                  style={{
+                    backgroundImage: `
+                      radial-gradient(circle at center, #FFF991 0%, transparent 70%)
+                    `,
+                    opacity: 0.6,
+                    mixBlendMode: "multiply",
+                  }}
+                />
+                <div className="relative z-10">
+                  <h3 className="text-sm font-semibold text-black/70">
+                    {plan.name}
+                  </h3>
+                  <p className="mt-3 text-3xl font-semibold text-black">
+                    {plan.price}
+                  </p>
+                  <p className="mt-2 text-sm text-black/58">
+                    {plan.credits.toLocaleString()} credits
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleCheckout(plan.id)}
+                    disabled={checkoutPack !== null}
+                    className="mt-6 flex h-10 w-full items-center justify-center rounded-full bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/82 disabled:cursor-not-allowed disabled:bg-black/45"
+                  >
+                    {checkoutPack === plan.id ? "Redirecting..." : "Checkout"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {checkoutError ? (
+            <p className="mt-4 rounded-[8px] border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+              {checkoutError}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function WorkspaceNavbar({
+  creditModalOpen,
+  onCreditModalOpenChange,
   onSearchChange,
   searchQuery = "",
 }: WorkspaceNavbarProps) {
-  const { loading, signOut, user } = useAuth();
+  const { credits, loading, session, signOut, user } = useAuth();
+  const [internalCreditModalOpen, setInternalCreditModalOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const isCreditModalOpen = creditModalOpen ?? internalCreditModalOpen;
+
+  const setCreditModalOpen = useCallback((open: boolean) => {
+    onCreditModalOpenChange?.(open);
+    if (creditModalOpen === undefined) {
+      setInternalCreditModalOpen(open);
+    }
+  }, [creditModalOpen, onCreditModalOpenChange]);
 
   const displayName = useMemo(
     () => user?.user_metadata.full_name ?? user?.user_metadata.name ?? user?.email,
@@ -34,6 +190,18 @@ export function WorkspaceNavbar({
   );
   const avatarUrl = user?.user_metadata.avatar_url ?? user?.user_metadata.picture;
   const initials = getInitials(displayName);
+
+  useEffect(() => {
+    function handlePageShow() {
+      setCreditModalOpen(false);
+    }
+
+    window.addEventListener("pageshow", handlePageShow);
+
+    return () => {
+      window.removeEventListener("pageshow", handlePageShow);
+    };
+  }, [setCreditModalOpen]);
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -97,12 +265,33 @@ export function WorkspaceNavbar({
               )}
             </span>
             <span className="hidden max-w-[120px] truncate text-xs font-medium text-white/72 sm:block">
-              {loading ? "Loading" : displayName}
+              {loading && !user ? "Loading" : displayName}
+            </span>
+            <span className="hidden h-7 items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-2 text-[11px] font-semibold text-white/72 sm:inline-flex">
+              <Coins className="h-3 w-3" aria-hidden="true" />
+              {typeof credits === "number" ? credits.toLocaleString() : "--"}
             </span>
           </button>
 
           <div className="pointer-events-none absolute right-0 top-[calc(100%+10px)] w-44 translate-y-1 opacity-0 transition duration-150 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100">
             <div className="rounded-2xl border border-white/15 bg-white/[0.08] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_18px_55px_rgba(0,0,0,0.34)] backdrop-blur-2xl">
+              <div className="mb-1 flex h-10 w-full items-center justify-between rounded-xl px-3 text-xs font-semibold text-white/78">
+                <span className="inline-flex items-center gap-2">
+                  <Coins className="h-3.5 w-3.5" aria-hidden="true" />
+                  Credits
+                </span>
+                <span>
+                  {typeof credits === "number" ? credits.toLocaleString() : "--"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreditModalOpen(true)}
+                className="mb-1 flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold text-white/78 transition hover:bg-white/12 hover:text-white"
+              >
+                <Star className="h-3.5 w-3.5" aria-hidden="true" />
+                Upgrade
+              </button>
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -115,6 +304,12 @@ export function WorkspaceNavbar({
           </div>
         </div>
       </nav>
+      {isCreditModalOpen ? (
+        <CreditModal
+          accessToken={session?.access_token}
+          onClose={() => setCreditModalOpen(false)}
+        />
+      ) : null}
     </header>
   );
 }

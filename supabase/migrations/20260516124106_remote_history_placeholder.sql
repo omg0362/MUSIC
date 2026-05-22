@@ -1,0 +1,1 @@
+-- Remote migration already applied before this repository had local migrations.
