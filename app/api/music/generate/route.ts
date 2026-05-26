@@ -6,7 +6,7 @@ const MODEL =
 const MUSIC_BUCKET = "MUSICs";
 
 export const runtime = "nodejs";
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 type GenerateMusicRequest = {
   batch_size?: unknown;
