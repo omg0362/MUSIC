@@ -8,19 +8,19 @@ const ACCENT = "#FECD00";
 
 const examples = [
   {
-    description: "City street ambience for fast-cut creator videos.",
-    file: "/music/1.mp3",
-    title: "Hongdae Street",
+    description: "Preview the first generated soundtrack for creator videos.",
+    file: "/music/test1.mp3",
+    title: "test 1",
   },
   {
-    description: "Warm narrative music for cinematic vlog scenes.",
-    file: "/music/2.mp3",
-    title: "Haruki",
+    description: "Preview the second generated soundtrack with a different mood.",
+    file: "/music/test2.mp3",
+    title: "test 2",
   },
   {
-    description: "Generated soundtrack ready for edits and shorts.",
-    file: "/music/3.mp3",
-    title: "Creator Cut",
+    description: "Preview the third generated soundtrack ready for edits.",
+    file: "/music/test3.mp3",
+    title: "test 3",
   },
 ];
 
