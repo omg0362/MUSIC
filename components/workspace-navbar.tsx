@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { Coins, Search, Star, X } from "lucide-react";
+import { Coins, Music2, Search, Star, X } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
 
 function getInitials(name?: string | null) {
@@ -216,18 +217,24 @@ export function WorkspaceNavbar({
   return (
     <header className="sticky top-0 z-40 w-full bg-transparent px-4 py-4 sm:px-6">
       <nav className="mx-auto grid h-16 max-w-7xl grid-cols-[auto_1fr_auto] items-center gap-4">
-        <a
-          href="/workspace"
-          aria-label="MUSIC workspace"
-          className="group inline-flex h-11 items-center gap-3 rounded-full border border-white/15 bg-white/[0.07] px-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_rgba(0,0,0,0.24)] backdrop-blur-2xl transition hover:border-white/25 hover:bg-white/[0.1]"
+        <Link
+          href="/"
+          aria-label="Go to MUSIC landing page"
+          className="group inline-flex h-12 items-center gap-3 rounded-full border border-[#FECD00]/18 bg-[#FECD00]/[0.055] px-3.5 pr-4 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_16px_48px_rgba(0,0,0,0.28)] backdrop-blur-2xl transition hover:border-[#FECD00]/36 hover:bg-[#FECD00]/[0.09] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_56px_rgba(254,205,0,0.08)]"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white/[0.08] text-[11px] font-semibold tracking-[-0.02em] shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]">
-            M
+          <span className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-[#FECD00]/24 bg-[radial-gradient(circle_at_50%_18%,rgba(254,205,0,0.42),rgba(254,205,0,0.1)_42%,rgba(255,255,255,0.06)_100%)] text-[#FECD00] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_0_28px_rgba(254,205,0,0.16)]">
+            <span className="absolute inset-x-1 top-1 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+            <Music2 className="relative h-4 w-4" aria-hidden="true" />
           </span>
-          <span className="hidden text-xs font-semibold tracking-[0.28em] text-white/80 sm:block">
-            MUSIC
+          <span className="hidden flex-col leading-none sm:flex">
+            <span className="text-[11px] font-semibold tracking-[0.3em] text-white/86">
+              MUSIC
+            </span>
+            <span className="mt-1 text-[9px] font-medium tracking-[0.2em] text-[#FECD00]/64">
+              STUDIO
+            </span>
           </span>
-        </a>
+        </Link>
 
         <div className="flex justify-center">
           <label className="relative block w-full max-w-[520px]">
